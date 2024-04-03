@@ -6,21 +6,15 @@ namespace LegacyApp
     {
         public bool AddUser(string firstName, string lastName, string email, DateTime dateOfBirth, int clientId)
         {
-            if (string.IsNullOrEmpty(firstName) || string.IsNullOrEmpty(lastName))
+            //UserValidation firstName, lastName, email
+            UserValidator validator = new UserValidator(firstName, lastName, email);
+            if (!validator.UserValidate())
             {
                 return false;
             }
-
-            if (!email.Contains("@") && !email.Contains("."))
-            {
-                return false;
-            }
-
-            var now = DateTime.Now;
-            int age = now.Year - dateOfBirth.Year;
-            if (now.Month < dateOfBirth.Month || (now.Month == dateOfBirth.Month && now.Day < dateOfBirth.Day)) age--;
-
-            if (age < 21)
+            
+            //User`s age to function AgeCalculator
+            if (AgeCalculator(dateOfBirth) < 21)
             {
                 return false;
             }
@@ -28,7 +22,59 @@ namespace LegacyApp
             var clientRepository = new ClientRepository();
             var client = clientRepository.GetById(clientId);
 
-            var user = new User
+            //UserCreating to function
+            var user = CreateUser(firstName, lastName, email, dateOfBirth, client);
+            
+            //If changed on switch
+            switch (client.Type)
+            {
+                case("VeryImportantClient"):
+                {
+                    user.HasCreditLimit = false;
+                    break;
+                }
+                case ("ImportantClient"):
+                {
+                    using (var userCreditService = new UserCreditService())
+                    {
+                        int creditLimit = userCreditService.GetCreditLimit(user.LastName, user.DateOfBirth);
+                        creditLimit = creditLimit * 2;
+                        user.CreditLimit = creditLimit;
+                    }
+                    break;
+                }
+                default:
+                {
+                    user.HasCreditLimit = true;
+                    using (var userCreditService = new UserCreditService())
+                    {
+                        int creditLimit = userCreditService.GetCreditLimit(user.LastName, user.DateOfBirth);
+                        user.CreditLimit = creditLimit;
+                    }
+                    break;
+                }
+            }
+
+            //Credit Checking in User Class
+            if (!user.CreditChecker())
+            {
+                return false;
+            }
+
+            UserDataAccess.AddUser(user);
+            return true;
+        }
+        private int AgeCalculator(DateTime dateOfBirth)
+        {
+            var now = DateTime.Now;
+            int age = now.Year - dateOfBirth.Year;
+            if (now.Month < dateOfBirth.Month || (now.Month == dateOfBirth.Month && now.Day < dateOfBirth.Day)) age--;
+            return age;
+        }
+
+        private User CreateUser(string firstName, string lastName, string email, DateTime dateOfBirth, Client client)
+        {
+            return new User
             {
                 Client = client,
                 DateOfBirth = dateOfBirth,
@@ -36,37 +82,6 @@ namespace LegacyApp
                 FirstName = firstName,
                 LastName = lastName
             };
-
-            if (client.Type == "VeryImportantClient")
-            {
-                user.HasCreditLimit = false;
-            }
-            else if (client.Type == "ImportantClient")
-            {
-                using (var userCreditService = new UserCreditService())
-                {
-                    int creditLimit = userCreditService.GetCreditLimit(user.LastName, user.DateOfBirth);
-                    creditLimit = creditLimit * 2;
-                    user.CreditLimit = creditLimit;
-                }
-            }
-            else
-            {
-                user.HasCreditLimit = true;
-                using (var userCreditService = new UserCreditService())
-                {
-                    int creditLimit = userCreditService.GetCreditLimit(user.LastName, user.DateOfBirth);
-                    user.CreditLimit = creditLimit;
-                }
-            }
-
-            if (user.HasCreditLimit && user.CreditLimit < 500)
-            {
-                return false;
-            }
-
-            UserDataAccess.AddUser(user);
-            return true;
         }
     }
 }
